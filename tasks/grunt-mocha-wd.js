@@ -1,6 +1,6 @@
 'use strict';
 
-var wd = require('wd');
+var wdSync = require('wd-sync');
 var SauceTunnel = require('sauce-tunnel');
 var _ = require('grunt').util._;
 var async = require('async');
@@ -62,7 +62,7 @@ module.exports = function (grunt) {
         browser.quit(callback);
       }
     };
-    opts.wd = wd;
+    opts.wd = wdSync;
     runner(opts, fileGroup, browser, grunt, onTestFinish);
   }
 
@@ -79,43 +79,50 @@ module.exports = function (grunt) {
   }
 
   function runTestsOnPhantom(fileGroup, opts, next) {
-    var browser;
+    var browser, client, sync;
     var phantomPort = opts.phantomPort || 4444;
     var phantomCapabilities = opts.phantomCapabilities;
     if (opts.usePromises) {
-      browser = wd.promiseChainRemote({port: phantomPort});
+      client = wdSync.promiseChainRemote({port: phantomPort});
+      browser = client.browser;
+      sync = client.sync;
     }
     else {
-      browser = wd.remote({port: phantomPort});
+      client = wdSync.remote({port: phantomPort});
+      browser = client.browser;
+      sync = client.sync;
     }
+
     grunt.log.writeln('Running webdriver tests against PhantomJS.');
+    sync( function() {
 
-    startPhantom(phantomPort, opts, function (err, phantomProc) {
-      if (err) { return next(err); }
-      browser.init(phantomCapabilities, function () {
-        runTestsForBrowser(opts, fileGroup, browser, function (err) {
+      startPhantom(phantomPort, opts, function (err, phantomProc) {
 
-          function onClose() {
-            grunt.log.writeln('Phantom exited.');
-            next(err);
-          }
+        if (err) { return next(err); }
+        browser.init(phantomCapabilities, function () {
+          runTestsForBrowser(opts, fileGroup, browser, function (err) {
 
-          // the process might already be closed due to an internal crash,
-          // so check first is already killed to avoid a deadlock.
-          if (phantomProc.killed) {
-            onClose();
-          }
-          else {
-            phantomProc.on('close', function() {
+            function onClose() {
+              grunt.log.writeln('Phantom exited.');
+              next(err);
+            }
+
+            // the process might already be closed due to an internal crash,
+            // so check first is already killed to avoid a deadlock.
+            if (phantomProc.killed) {
               onClose();
-            });
+            }
+            else {
+              phantomProc.on('close', function() {
+                onClose();
+              });
 
-            phantomProc.kill();
-          }
+              phantomProc.kill();
+            }
+          });
         });
       });
     });
-
   }
 
   function startPhantom(port, opts, next) {
@@ -179,7 +186,7 @@ module.exports = function (grunt) {
    */
   function initBrowser(browserOpts, opts, mode, fileGroup, cb) {
     var funcName = opts.usePromises ? 'promiseChainRemote': 'remote';
-    var browser = wd[funcName](extractConnectionInfo(opts));
+    var browser = wdSync[funcName](extractConnectionInfo(opts));
     browser.browserTitle = browserOpts.browserTitle;
     browser.mode = mode;
 
@@ -326,8 +333,8 @@ module.exports = function (grunt) {
 };
 
 //wd.js monkey patch for clearer errors
-var _newError = wd.webdriver.prototype._newError;
-wd.webdriver.prototype._newError = function (opts) {
+// var _newError = wd.webdriver.prototype._newError;
+/*wdSync.webdriver.prototype._newError = function (opts) {
   var err = _newError(opts);
   try {
     err = new Error(err.cause.value.message
@@ -338,3 +345,4 @@ wd.webdriver.prototype._newError = function (opts) {
   catch (e) {}
   return err;
 };
+*/
